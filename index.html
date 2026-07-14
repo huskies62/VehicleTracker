@@ -227,6 +227,37 @@ function vehicleEntries() {
   return entries.filter((e) => e.vehicleId === activeVehicleId).sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
+function computeWindowStats(es, days) {
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - days * 86400000);
+  const sorted = [...es].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const inWindow = sorted.filter((e) => new Date(e.date) >= cutoff);
+  if (inWindow.length === 0) return null;
+
+  const before = sorted.filter((e) => new Date(e.date) < cutoff && Number.isFinite(e.odometer));
+  const withOdoWindow = inWindow.filter((e) => Number.isFinite(e.odometer));
+  const latestOdo = withOdoWindow.length ? Math.max(...withOdoWindow.map((e) => e.odometer)) : undefined;
+  let baselineOdo;
+  if (before.length) baselineOdo = before[before.length - 1].odometer;
+  else if (withOdoWindow.length) baselineOdo = Math.min(...withOdoWindow.map((e) => e.odometer));
+  const distance = Number.isFinite(latestOdo) && Number.isFinite(baselineOdo) ? latestOdo - baselineOdo : 0;
+
+  const fuel = inWindow.filter((e) => e.type === "fuel");
+  const service = inWindow.filter((e) => e.type === "service");
+  const other = inWindow.filter((e) => e.type === "other");
+  const fuelQty = fuel.reduce((s, e) => s + (Number(e.liters) || 0), 0);
+  const fuelCost = fuel.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const serviceCost = service.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const otherCost = other.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const totalCost = fuelCost + serviceCost + otherCost;
+
+  return {
+    distance, fillUps: fuel.length, fuelQty, fuelCost, serviceCost, otherCost, totalCost,
+    costPerKm: distance ? totalCost / distance : NaN,
+    avgFuelEff: distance ? (fuelQty / distance) * 100 : NaN,
+  };
+}
+
 function computeStats(es) {
   if (es.length === 0) return null;
   const withOdo = es.filter((e) => Number.isFinite(e.odometer));
@@ -306,12 +337,24 @@ function renderBody(v, es, stats) {
 function renderDashboard(v, es, stats) {
   if (!stats) return `<div class="empty">No entries yet for ${esc(v.name)}. Tap + to log a fill-up.</div>`;
   const digits = String(Math.max(0, Math.round(stats.distance))).padStart(6, "0").slice(-6);
+  const w30 = computeWindowStats(es, 30);
   return `
     <div class="odo-card">
       <span class="odo-label">Total Distance</span>
       <div class="odo-digits">${digits.split("").map((ch) => `<div class="odo-digit">${ch}</div>`).join("")}</div>
       <span style="font-size:11px;color:var(--dim);">km</span>
     </div>
+    ${w30 ? `
+      ${sectionLabel(ICONS.gauge, "#6FAF9C", "Last 30 Days")}
+      ${statRow("Distance", num(w30.distance, 0), "km")}
+      ${statRow("Fill-ups", w30.fillUps)}
+      ${statRow("Fuel Cost", money(w30.fuelCost), "CAD")}
+      ${statRow("Service Cost", money(w30.serviceCost), "CAD")}
+      ${statRow("Other Expenses", money(w30.otherCost), "CAD")}
+      ${statRow("Total Cost", money(w30.totalCost), "CAD")}
+      ${statRow("Cost/km", num(w30.costPerKm, 2), "CAD")}
+      ${statRow("Avg Fuel Eff", num(w30.avgFuelEff, 2), "L/100km")}
+    ` : ""}
     ${sectionLabel(ICONS.gauge, "#E3A23D", "Total Stats")}
     ${statRow("Fill-ups", stats.fillUps)}
     ${statRow("Fuel Qty", num(stats.fuelQty, 2), "L")}
