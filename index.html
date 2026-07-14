@@ -115,6 +115,11 @@ function normalizeDate(raw) {
   if (isNaN(d)) return raw;
   return d.toISOString().slice(0, 10);
 }
+function safeDate(raw) {
+  if (!raw) return new Date(NaN);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(raw + "T00:00:00");
+  return new Date(raw);
+}
 
 function parseDelimited(text) {
   const firstLine = text.split(/\r?\n/, 1)[0] || "";
@@ -343,7 +348,7 @@ function statRow(label, value, unit) {
 }
 function entryRow(e) {
   const meta = TYPE_META[e.type] || TYPE_META.other;
-  const dateStr = new Date(e.date + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const dateStr = safeDate(e.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
   const sub = `${Number.isFinite(e.odometer) ? `Odo: ${e.odometer}` : meta.label}${e.type === "fuel" && Number.isFinite(e.liters) ? ` · ${e.liters}L` : ""}`;
   return `
     <button class="entry-row" data-act="edit-entry" data-id="${e.id}">
@@ -486,7 +491,7 @@ function bindEvents() {
     if (act === "add-entry") { modal = { type: "entry", entry: { _type: "fuel", _date: new Date().toISOString().slice(0,10), _fullTank: true } }; render(); return; }
     if (act === "edit-entry") {
       const en = entries.find((x) => x.id === t.dataset.id);
-      modal = { type: "entry", entry: { id: en.id, _type: en.type, _date: en.date, _odometer: en.odometer ?? "", _liters: en.liters ?? "", _cost: en.cost ?? "", _note: en.note || "", _fullTank: en.fullTank !== false } };
+      modal = { type: "entry", entry: { id: en.id, _type: en.type, _date: normalizeDate(en.date), _odometer: en.odometer ?? "", _liters: en.liters ?? "", _cost: en.cost ?? "", _note: en.note || "", _fullTank: en.fullTank !== false } };
       render(); return;
     }
     if (act === "set-entry-type") { modal.entry._type = t.dataset.type; render(); return; }
