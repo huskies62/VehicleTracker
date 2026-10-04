@@ -78,6 +78,13 @@
   .vpick-row { width:100%; display:flex; align-items:center; gap:12px; padding:12px 6px; background:none; border:none; border-radius:10px; margin-bottom:4px; color:var(--text); }
   .vpick-row.active { background:var(--surface3); }
   svg.ic { display:block; }
+  .tile-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:4px; }
+  .tile { background:var(--surface3); border:1px solid var(--border2); border-radius:12px; padding:16px 10px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:4px; }
+  .tile-value { font-family:var(--mono); font-size:24px; font-weight:700; color:var(--amber); font-variant-numeric:tabular-nums; line-height:1.1; }
+  .tile-label { font-size:11.5px; color:var(--dim); letter-spacing:0.02em; }
+  .tile-wide { grid-column:1 / -1; background:var(--surface3); border:1px solid var(--border2); border-radius:12px; padding:12px; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:10px; }
+  .tile-wide .tile-value { font-size:17px; }
+  .tile-wide .tile-label { font-size:12.5px; }
 </style>
 </head>
 <body>
@@ -481,6 +488,41 @@ function renderModal() {
         <button class="btn-primary" style="flex:1;${!rows || rows.length === 0 ? "opacity:0.5;" : ""}" data-act="confirm-import" ${!rows || rows.length === 0 ? "disabled" : ""}>${modal.importing ? "Importing…" : "Import"}</button>
       </div>
     `);
+  } else if (modal.type === "fuelSummary") {
+    const en = modal.entry;
+    const veh = vehicles.find((x) => x.id === en.vehicleId);
+    const dateStr = safeDate(en.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+    html = modalShell("Fill-Up Logged", `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0 16px;">
+        <div style="width:48px;height:48px;border-radius:50%;background:#E3A23D22;display:flex;align-items:center;justify-content:center;margin-bottom:8px;">
+          ${ICONS.fuel("#E3A23D", 24)}
+        </div>
+        <span style="color:var(--dim);font-size:13px;">${esc(dateStr)}${veh ? ` · ${esc(veh.name)}` : ""}</span>
+      </div>
+      <div class="tile-grid">
+        <div class="tile">
+          <div class="tile-value">${modal.daysBetween !== null ? modal.daysBetween : "—"}</div>
+          <div class="tile-label">days since last fill</div>
+        </div>
+        <div class="tile">
+          <div class="tile-value">${modal.kmDriven !== null ? num(modal.kmDriven, 0) : "—"}</div>
+          <div class="tile-label">km traveled</div>
+        </div>
+        <div class="tile">
+          <div class="tile-value">${modal.lPer100 !== null ? num(modal.lPer100, 1) : "—"}</div>
+          <div class="tile-label">L/100km</div>
+        </div>
+        <div class="tile">
+          <div class="tile-value">$${money(Number(en.cost))}</div>
+          <div class="tile-label">fuel cost</div>
+        </div>
+      </div>
+      <div class="tile-wide">
+        <span class="tile-value">${num(Number(en.liters), 1)} L</span>
+        <span class="tile-label">fuel added</span>
+      </div>
+      <button class="btn-primary" style="width:100%;margin-top:18px;" data-act="close-modal">Done</button>
+    `);
   } else if (modal.type === "entry") {
     const en = modal.entry;
     const isNew = !en.id;
@@ -623,6 +665,15 @@ function bindEvents() {
   }
 }
 
+function findPrevFuelEntry(allEntries, vehicleId, currentEntry) {
+  const candidates = allEntries.filter(
+    (e) => e.vehicleId === vehicleId && e.type === "fuel" && e.id !== currentEntry.id &&
+      Number.isFinite(e.odometer) && Number.isFinite(currentEntry.odometer) && e.odometer < currentEntry.odometer
+  );
+  if (candidates.length === 0) return null;
+  return candidates.reduce((a, b) => (a.odometer > b.odometer ? a : b));
+}
+
 async function saveEntryFromModal() {
   const en = modal.entry;
   const type = en._type;
@@ -646,6 +697,16 @@ async function saveEntryFromModal() {
   const next = en.id ? entries.map((x) => (x.id === en.id ? entry : x)) : [...entries, entry];
   await persistEntries(next);
   saving = false;
+
+  if (type === "fuel") {
+    const prev = findPrevFuelEntry(entries, activeVehicleId, entry);
+    const kmDriven = prev && Number.isFinite(entry.odometer) ? entry.odometer - prev.odometer : null;
+    const lPer100 = kmDriven && kmDriven > 0 && Number.isFinite(entry.liters) ? (entry.liters / kmDriven) * 100 : null;
+    const daysBetween = prev ? Math.round((safeDate(entry.date) - safeDate(prev.date)) / 86400000) : null;
+    modal = { type: "fuelSummary", entry, kmDriven, lPer100, daysBetween };
+    render();
+    return;
+  }
   closeModal();
 }
 
