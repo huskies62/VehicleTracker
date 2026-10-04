@@ -1,6 +1,6 @@
 {
-  "name": "Milepost",
-  "short_name": "Milepost",
+  "name": "Vehicle Exp Tracker",
+  "short_name": "Vehicle Exp",
   "description": "Vehicle fuel, service, and expense log",
   "start_url": "./index.html",
   "display": "standalone",
